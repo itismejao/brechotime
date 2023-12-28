@@ -1,0 +1,83 @@
+version: "3.7"
+
+services:
+    app:
+    container_name: gestor-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: buscaprodutores
+    restart: unless-stopped
+    ports:
+      - "8084:80"
+    volumes:
+      - .:/var/www/html
+    networks:
+      - buscaprodutores
+
+  mysql:
+    container_name: gestor-mysql
+    image: mysql:latest
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_USER: ${DB_USERNAME}
+    volumes:
+      - ./docker/mysql:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password --sql-mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION" --skip-ssl
+    ports:
+      - "3390:3306"
+    networks:
+      - buscaprodutores
+  #queue
+  supervisor:
+    build:
+        context: .
+        dockerfile: ./docker/supervisor/Dockerfile
+    container_name: gestor-supervisor
+    restart: unless-stopped
+    environment:
+        APP_ROOT: ${APP_ROOT}
+        QUEUE_DRIVER: ${QUEUE_CONNECTION}
+        OPTIONS: ${QUEUE_OPTIONS}
+        DB_CONNECTION: ${DB_CONNECTION}
+        DB_HOST: ${DB_HOST}
+        DB_DATABASE: ${DB_DATABASE}
+        DB_USERNAME: ${DB_USERNAME}
+        DB_PASSWORD: ${DB_PASSWORD}
+    logging:
+        driver: "json-file"
+        options:
+            max-size: "10m"
+            max-file: "3"
+    volumes:
+        - ./:/var/www
+        - ./docker/supervisor/supervisor.conf:/etc/supervisor/supervisord.conf
+    networks:
+        - buscaprodutores
+
+  # redis
+  redis:
+    container_name: gestor-redis
+    image: redis:latest
+    restart: on-failure
+    command: /bin/sh -c "redis-server --requirepass $$REDIS_PASSWORD"
+    logging:
+        driver: "json-file"
+        options:
+            max-size: "10m"
+            max-file: "3"
+    volumes:
+        - ./redis.conf:/usr/local/etc/redis/redis.conf
+    ports:
+        - "6379:6379"
+    env_file:
+        - .env
+    networks: 
+        - buscaprodutores
+
+networks:
+  buscaprodutores:
+    driver: bridge
