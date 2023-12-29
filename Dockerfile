@@ -1,42 +1,59 @@
-# Use a imagem baseada em Debian com Apache
-FROM php:8.1-apache-bookworm
+FROM php:8.1.5-fpm
 
-# Atualize os pacotes do sistema operacional
-RUN apt update && apt install -y \
-    zip \
-    unzip \
-    libpq-dev \
+# Arguments
+ARG USER
+ARG UID
+ARG GID
+
+#USER root
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
     curl \
-    npm \
-    && rm -rf /var/cache/apk/* \
-    && apt-get clean
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    zip \
+    unzip
 
-# Instale as extensões PHP necessárias
-RUN docker-php-ext-install \
-    pdo \
-    pdo_mysql \
-    pdo_pgsql
+# Clear cache
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Configurando root para pasta public
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
-RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+# Install PHP extensions
+RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd sockets
 
-# mod_rewrite for URL rewrite and mod_headers for .htaccess extra headers like Access-Control-Allow-Origin-
-RUN a2enmod rewrite headers
+RUN apt-get update && apt-get install -y \
+    libfreetype6-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) gd
 
-# Instale o Composer
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+RUN apt-get update && apt-get install -y libmagickwand-6.q16-dev --no-install-recommends \
+    && ln -s /usr/lib/x86_64-linux-gnu/ImageMagick-6.8.9/bin-Q16/MagickWand-config /usr/bin \
+    && pecl install imagick
 
-# Entrando no diretorio de trabalho
-WORKDIR /var/www/html
+# Get latest Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Instale as dependências do Laravel com o Composer
-COPY ./composer.* ./
-RUN composer install --no-autoloader && rm -rf /root/.composer
+# Create system user to run Composer and Artisan Commands
+RUN useradd -G www-data,root -u $UID -d /home/$USER $USER
+RUN mkdir -p /home/$USER/.composer && \
+    chown -R $USER:$USER /home/$USER
 
-# Copiando codigo do projeto
-COPY --chown=www-data:www-data . .
+# Install redis
+RUN pecl install -o -f redis \
+    &&  rm -rf /tmp/pear \
+    &&  docker-php-ext-enable redis
 
-# Criando arquivos de autoload
-RUN composer dump-autoload
+### Instalar e Habilitar o Swoole
+RUN pecl install swoole
+RUN docker-php-ext-enable swoole
+
+RUN apt-get update && apt install -y mariadb-client
+
+# Set working directory
+WORKDIR /var/www
+
+USER $USER
