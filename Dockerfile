@@ -47,10 +47,6 @@ RUN pecl install -o -f redis \
     &&  rm -rf /tmp/pear \
     &&  docker-php-ext-enable redis
 
-### Instalar e Habilitar o Swoole
-RUN pecl install swoole
-RUN docker-php-ext-enable swoole
-
 RUN apt-get update && apt install -y mariadb-client
 
 # Set working directory
